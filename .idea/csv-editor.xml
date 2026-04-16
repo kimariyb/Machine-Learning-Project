@@ -17,14 +17,7 @@
             </Attribute>
           </value>
         </entry>
-        <entry key="\Power-Forecasting\model\预测结果_20260416_162920.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="\Power-Forecasting\model\预测结果_20260416_163058.csv">
+        <entry key="\Power-Forecasting\model\prediction.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />

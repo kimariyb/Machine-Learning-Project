@@ -2,14 +2,14 @@ import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import joblib
 
 from datetime import datetime
 from loguru import logger
 from utils import data_processing
 from xgboost import XGBRegressor
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
-from sklearn.metrics import mean_squared_error
-import joblib
+
 
 plt.rcParams["font.sans-serif"] = ["SimHei", "DejaVu Sans"]  # 兼容Windows/Linux/Mac
 plt.rcParams["axes.unicode_minus"] = False  # 解决负号显示问题
@@ -22,6 +22,8 @@ class PowerForecastingModel:
         self.model = None
 
         self.results_dir = "./model"
+        self.train_data = None
+
         os.makedirs(self.results_dir, exist_ok=True)
 
         self._setup_logger()
@@ -33,58 +35,44 @@ class PowerForecastingModel:
     def _load_data(self):
         data_dir = "./data"
         self.train_path = os.path.join(data_dir, "train.csv")
-        self.test_path = os.path.join(data_dir, "test.csv")
-
         self.train_data = data_processing(self.train_path)
-        self.test_data = data_processing(self.test_path)
 
         logger.info(f"训练集: {self.train_data.shape}")
-        logger.info(f"测试集: {self.test_data.shape}")
 
     def feature_engineering(self):
         logger.info("开始特征工程...")
 
         df_train = self.train_data.copy()
-        df_test = self.test_data.copy()
 
         # 时间格式
         df_train["time"] = pd.to_datetime(df_train["time"])
-        df_test["time"] = pd.to_datetime(df_test["time"])
 
         # 时间特征
-        for df in [df_train, df_test]:
-            df["hour"] = df["time"].dt.hour
-            df["month"] = df["time"].dt.month
-            df["is_workday"] = (df["time"].dt.weekday < 5).astype(int)
+        df_train["hour"] = df_train["time"].dt.hour
+        df_train["month"] = df_train["time"].dt.month
+        df_train["is_workday"] = (df_train["time"].dt.weekday < 5).astype(int)
 
-            # 周期性编码
-            df["hour_sin"] = np.sin(2 * np.pi * df["hour"] / 24)
-            df["hour_cos"] = np.cos(2 * np.pi * df["hour"] / 24)
+        # 周期性编码
+        df_train["hour_sin"] = np.sin(2 * np.pi * df_train["hour"] / 24)
+        df_train["hour_cos"] = np.cos(2 * np.pi * df_train["hour"] / 24)
 
         # ===================== lag 特征 =====================
         lags = [1, 24, 48]
 
         for lag in lags:
             df_train[f"lag_{lag}"] = df_train[self.target_col].shift(lag)
-            df_test[f"lag_{lag}"] = df_test[self.target_col].shift(lag)
 
         # ===================== rolling 特征 =====================
         df_train["rolling_mean_24"] = df_train[self.target_col].rolling(24).mean()
         df_train["rolling_std_24"] = df_train[self.target_col].rolling(24).std()
 
-        df_test["rolling_mean_24"] = df_test[self.target_col].rolling(24).mean()
-        df_test["rolling_std_24"] = df_test[self.target_col].rolling(24).std()
-
         # 删除空值
         df_train = df_train.dropna()
-        df_test = df_test.dropna()
 
         # 删除时间列
         df_train = df_train.drop(columns=["time"])
-        df_test = df_test.drop(columns=["time"])
 
         self.train_data = df_train
-        self.test_data = df_test
 
         self._split_features_labels()
 
@@ -116,13 +104,6 @@ class PowerForecastingModel:
         self.X = self.train_data.drop(columns=[self.target_col])
         self.y = self.train_data[self.target_col]
 
-        if self.target_col in self.test_data.columns:
-            self.X_test = self.test_data.drop(columns=[self.target_col])
-            self.y_test = self.test_data[self.target_col]
-        else:
-            self.X_test = self.test_data
-            self.y_test = None
-
     def train(self, cv=5):
         logger.info("开始训练（TimeSeries CV）...")
 
@@ -145,7 +126,7 @@ class PowerForecastingModel:
             param_grid,
             cv=tscv,
             scoring='neg_root_mean_squared_error',
-            n_jobs=-1,
+            n_jobs=8,
             verbose=1
         )
 
@@ -163,16 +144,6 @@ class PowerForecastingModel:
         joblib.dump(self.model, model_path)
         logger.success(f"模型已保存: {model_path}")
 
-    def evaluate(self):
-        logger.info("模型评估...")
-
-        if self.y_test is not None:
-            preds = self.model.predict(self.X_test)
-            rmse = np.sqrt(mean_squared_error(self.y_test, preds))
-            logger.info(f"测试集 RMSE: {rmse:.4f}")
-        else:
-            logger.info("无测试集标签，跳过评估")
-
     def feature_importance(self):
         importance = pd.DataFrame({
             "feature": self.X.columns,
@@ -184,9 +155,7 @@ class PowerForecastingModel:
     def run(self):
         self.feature_engineering()
         self.train()
-        self.evaluate()
         self.feature_importance()
-
 
 
 
@@ -274,8 +243,6 @@ def analyze_data(data: pd.DataFrame, time_col: str = "time", target_col: str = "
     except Exception as e:
         logger.error(f"数据分析失败: {str(e)}")
         raise
-
-
 
 
 

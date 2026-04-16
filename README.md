@@ -1,1 +1,11 @@
 # Machine-Learning-Project
+
+## Power Forecasting 电力预测
+
+```JSON
+"MAE": 54.378683919270834,
+"RMSE": 89.18706571035024,
+"MAPE": 5.444778537621757,
+"R2": 0.8013903804405045
+```
+
